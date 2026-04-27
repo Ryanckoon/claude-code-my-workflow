@@ -412,3 +412,103 @@ idempotent.
   scales; this maximises the visible signal but trades off direct
   side-by-side comparability. If a shared y-scale is wanted, it is a
   small refactor.
+
+---
+
+## 14. Edition v3 update — 2026-04-27
+
+Single methodological change applied; folder tree, filenames, three
+sub-figures, three buckets, [-9, +9] window, group definitions, and
+per-city alignment are all unchanged from v2.
+
+### 14.1 Methodology change
+
+Y is now a **percentage change vs day −4**, not a raw level deviation:
+
+```
+y_pct[k] = (y[k] − y[−4]) / y[−4] × 100
+```
+
+Implementation:
+
+```r
+pct <- if_else(!is.na(base) & base != 0,
+               (raw - base) / base * 100,
+               NA_real_)
+```
+
+- Y-axis formatter: `label_number(suffix = "%", accuracy = 0.1)` →
+  ticks like `-10.0%`, `0.0%`, `5.5%`.
+- Y-axis label: `<Value|Count> — % Δ vs day -4` (no `(CNY)` / `(txns)`
+  unit suffix; percentage is unitless).
+- Subtitle: `Within-pair % deviation from day -4 | bin = 1 day | …`.
+- Symmetric y-limits and all v2 visual features preserved.
+
+### 14.2 Edge-case handling: y[−4] = 0 or NA
+
+The percentage transform is undefined when the day-`−4` baseline is
+zero or missing, so those pairs are dropped for the affected variable
+and figure. Practical impact:
+
+| Variable          | NA baseline | Zero baseline | Total dropped |
+|-------------------|-------------|---------------|---------------|
+| value_all         | 0           | 0             | 0   |
+| count_all         | 0           | 0             | 0   |
+| value_health      | 397         | 1             | 398 |
+| count_health      | 397         | 1             | 398 |
+| value_hospital    | 818         | 0             | 818 |
+| count_hospital    | 818         | 0             | 818 |
+| value_pharmacy    | 740         | 0             | 740 |
+| count_pharmacy    | 739         | 0             | 739 |
+| value_restaurant  | 131         | 1             | 132 |
+| count_restaurant  | 131         | 1             | 132 |
+| value_supermarket | 155         | 1             | 156 |
+| count_supermarket | 154         | 1             | 155 |
+
+Zero-baseline drops are negligible (≤ 1 pair per variable): the
+day-`−4` baseline is essentially never structurally zero in this
+dataset for any active category.
+
+### 14.3 Visual sanity checks (v3)
+
+- **General/count/01_Overall — Pharmacy.** Hit (purple) dips to
+  ~`−11%` at day 0 then rebounds; Not-hit (teal) trends modestly
+  positive (~`+5%`) across the window, reflecting the overall
+  upward time trend in pharmacy transactions over the calendar
+  period.
+- **high_intensity/value/02_Landfall — Supermarket.** Landfall dips
+  to ~`−32%` at day 0 and recovers only partially by day +9; Not-hit
+  drifts to `+10–20%` over the window. Magnitude in % is
+  much more interpretable than the raw CNY M units in v2.
+- **low_intensity/count/03_Subsequent — Pharmacy.** Subsequent shows
+  a small dip on day `−1` (~`−5%`) and a sharp positive spike to
+  ~`+9%` on day 0 (storm-tail demand) before settling near 0%.
+- All Not-hit lines pass through 0% at day `−4`, as expected.
+
+### 14.4 Why percentage instead of raw level
+
+Levels are dominated by city-size composition (a `−3M CNY` dip in a
+top-tier city has the same numeric magnitude as a `−500K CNY` dip in
+a smaller city). Percentage normalises by each pair's own pre-event
+baseline, so the displayed effect is comparable across cities and
+categories regardless of base size. This also makes the Hit / Landfall
+/ Subsequent lines directly comparable across categories within a
+single bucket, and across buckets within a single category.
+
+### 14.5 Caveats specific to v3
+
+- **Sensitivity to small baselines.** Pairs with very small but
+  non-zero day-`−4` values can blow up the per-pair percentage
+  (e.g., baseline = 1 transaction → +500% on day 0 with 6
+  transactions). Within-pair averaging across many pairs typically
+  smooths this out, but the Hit / Landfall / Subsequent series for
+  sparse categories (hospital, pharmacy) may show wider SE bounds
+  than for `*_all`.
+- **Asymmetry with raw-level drops.** A `+50%` move and a `−50%`
+  move have equal magnitude in % space but very different magnitudes
+  in CNY/txn space. The figure now shows symmetric % swings rather
+  than symmetric absolute swings.
+- **Day-`−4` baseline still single-day.** A pair with an anomalously
+  low day-`−4` value will see all subsequent percentages inflated.
+  The single-day baseline is per task spec; a less noisy alternative
+  would be to use the average over days `−9 … −5`.

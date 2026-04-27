@@ -1,6 +1,6 @@
 ## -----------------------------------------------------------------------------
 ##   Climate and Consumption
-##   04_Binscatter.R   (Edition v2 — 2026-04-27)
+##   04_Binscatter.R   (Edition v3 — 2026-04-27)
 ##
 ##   Descriptive binscatters of daily city consumption around tropical cyclones.
 ##   Three buckets × six categories × two prefixes × three sub-figures = 108 PDFs.
@@ -22,10 +22,11 @@
 ##     All-hit    → as for its underlying Landfall/Subsequent rows.
 ##
 ##   x-axis : event_time ∈ [-9, +9].
-##   y-axis : within-pair deviation from day -4 baseline:
-##              for each (TC, city) pair, subtract its day-(-4) value from
-##              every day's value, then average within (group, event_time).
-##              Y-axis centred symmetrically so y = 0 sits in the middle.
+##   y-axis : within-pair % change from day -4 baseline (v3):
+##              y_pct[k] = (y[k] − y[−4]) / y[−4] × 100, then averaged
+##              within (group, event_time). Pairs with y[−4] == 0 or NA
+##              are dropped for that variable (percentage undefined).
+##              Y-axis centred symmetrically so y = 0% sits in the middle.
 ##
 ##   ±1 SE shown as thin dashed lines (no fill).
 ##   Legend at bottom in a single row.
@@ -198,7 +199,7 @@ cat(sprintf("  Stacked rows: %s | groups: %s\n",
 # 4. Within-pair deviation from baseline_day
 # =============================================================================
 
-cat(sprintf("Computing within-pair deviation from day %d baseline...\n",
+cat(sprintf("Computing within-pair %% deviation from day %d baseline...\n",
             baseline_day))
 
 baselines <- stacked %>%
@@ -208,18 +209,32 @@ baselines <- stacked %>%
 
 stacked <- stacked %>% left_join(baselines, by = "pair_id")
 
+# v3: y_dev is now a percentage change vs day -4.
+#   y_dev[k] = (y[k] − y[−4]) / y[−4] × 100
+# Pairs with y[−4] == 0 or NA produce NA y_dev (dropped from the figure).
 for (vv in y_cols) {
   base_col <- paste0(vv, "__base")
-  stacked[[paste0(vv, "__dev")]] <- stacked[[vv]] - stacked[[base_col]]
+  base     <- stacked[[base_col]]
+  raw      <- stacked[[vv]]
+  pct      <- if_else(!is.na(base) & base != 0,
+                      (raw - base) / base * 100,
+                      NA_real_)
+  stacked[[paste0(vv, "__dev")]] <- pct
 }
 
-miss_counts <- sapply(y_cols, function(vv) {
+miss_na  <- sapply(y_cols, function(vv) sum(is.na(baselines[[paste0(vv, "__base")]])))
+miss_zero <- sapply(y_cols, function(vv) {
   bb <- baselines[[paste0(vv, "__base")]]
-  sum(is.na(bb))
+  sum(!is.na(bb) & bb == 0)
 })
-cat(sprintf("  Pairs missing day-%d baseline by variable:\n", baseline_day))
-print(data.frame(variable = y_cols, missing_pairs = miss_counts,
-                 row.names = NULL))
+cat(sprintf(
+  "  Pairs dropped because day-%d baseline is NA or zero (v3 %% transform):\n",
+  baseline_day))
+print(data.frame(variable      = y_cols,
+                 missing_NA    = miss_na,
+                 zero_baseline = miss_zero,
+                 dropped_total = miss_na + miss_zero,
+                 row.names     = NULL))
 
 # =============================================================================
 # 5. Bin-mean collapse + plotting
@@ -246,8 +261,9 @@ bin_summary <- function(df, varname, series_map) {
               .groups = "drop")
 }
 
-pretty_prefix <- function(p) if (p == "value") "Value (CNY)" else "Count (txns)"
-y_label_fmt   <- label_number(scale_cut = cut_short_scale(), accuracy = 0.1)
+pretty_prefix <- function(p) if (p == "value") "Value" else "Count"
+# v3: y is a percentage; format axis with a "%" suffix (already in percent units).
+y_label_fmt   <- label_number(suffix = "%", accuracy = 0.1)
 
 # Series-map presets for each sub-figure
 series_maps <- list(
@@ -280,7 +296,7 @@ plot_one <- function(df, varname, prefix, category,
   title <- sprintf("Binscatter: %s (%s) — %s — %s",
                    pretty_cat, prefix, focal_labels[[focal]], bucket_label)
   subtitle <- sprintf(
-    "Within-pair deviation from day %d | bin = 1 day | Mean (solid) ±1 SE (dashed)",
+    "Within-pair %% deviation from day %d | bin = 1 day | Mean (solid) ±1 SE (dashed)",
     baseline_day)
 
   # Symmetric y-limits so y = 0 sits in the centre.
@@ -317,7 +333,7 @@ plot_one <- function(df, varname, prefix, category,
     labs(title    = title,
          subtitle = subtitle,
          x        = "Days Relative to Tropical Cyclone Landfall",
-         y        = sprintf("%s — Δ vs day %d",
+         y        = sprintf("%s — %% Δ vs day %d",
                             pretty_prefix(prefix), baseline_day))  +
     base_theme
 

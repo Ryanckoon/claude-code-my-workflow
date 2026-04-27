@@ -142,3 +142,24 @@ Six modifications to v1:
 
    Total: **108 PDFs**. The script deletes any pre-existing v0/v1 PDFs
    under `Outputs/binscatter/` before regenerating.
+
+---
+
+## Edition v3 — APPROVED 2026-04-27
+
+Single change: y is now a **percentage change** vs day `−4`, not a raw
+level deviation:
+
+```
+y_pct[k] = (y[k] − y[−4]) / y[−4] × 100
+```
+
+- Pairs with `y[−4] == 0` or `y[−4]` missing are dropped for that
+  variable (percentage undefined).
+- Y-axis formatter switches to `label_number(suffix = "%", accuracy = 0.1)`.
+- Y-axis label: `<Value|Count> — % Δ vs day -4`.
+- Subtitle: `Within-pair % deviation from day -4 | bin = 1 day | Mean (solid) ±1 SE (dashed)`.
+- Symmetric y-limits and all other v2 features are preserved.
+
+Folder tree, filenames, three sub-figures, three buckets, [-9,+9]
+window, group definitions, per-city alignment — all unchanged from v2.
