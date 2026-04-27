@@ -54,3 +54,6 @@ CLAUDE.local.md
 # Output artifacts — uncomment lines below based on your preference
 # *.rds
 # output/**/*.rds
+
+# Project data (large, not redistributable — keep R scripts git-sourceable)
+Data/
