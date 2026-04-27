@@ -144,7 +144,271 @@ Required R packages: `haven`, `dplyr`, `tidyr`, `stringr`, `purrr`,
 - **±1 SE ribbon, not ±1.96 SE.** The figure is descriptive, not
   inferential; the ribbon conveys precision of the bin mean, not a
   formal CI. The stacked-DiD event studies use 95% CIs.
-- **Reference period.** None — this is unconditional means by group, not
-  a within-group deviation. If a normalised version is wanted (e.g.,
-  "demean each group by its day −10 to −5 average"), it is a one-line
+- **Reference period (v0 only).** v0 plots unconditional group means;
+  v1 (below) replaces this with a within-pair deviation from day −14.
+- **Reference period.** None in v0 — this is unconditional means by
+  group, not a within-group deviation. If a normalised version is wanted
+  (e.g., "demean each group by its day −10 to −5 average"), it is a one-line
   addition to the R script.
+
+---
+
+## 12. Edition v1 update — 2026-04-27
+
+Six modifications applied; the v0 flat-folder PDFs were deleted and
+replaced by an intensity-split structure under `Outputs/binscatter/`.
+
+### 12.1 Methodology changes
+
+1. **Per-city hit-date alignment.**
+   - Landfall city series: day 0 = TC's first-landfall date.
+   - Subsequent city series: day 0 = THAT city's own `city_hit_date`
+     (e.g., a city hit on date 2 of a TC that landed on date 1 now has
+     its day 0 at date 2, not date 1).
+   - Not-hit city series: day 0 = TC's first-landfall date
+     (`typhoon_start_date`) — only defensible anchor for an uninvolved
+     city.
+2. **±1 SE shown as dashed lines.** No fill ribbon; mean line is solid,
+   ±1 SE bounds are thin dashed lines in the same color as the mean.
+3. **Y-axis is within-pair deviation from day −14.** For every (TC, city)
+   pair, subtract that pair's day-`−14` value from each day's value;
+   then average within `(group, event_time)`. Day `−14` is therefore
+   exactly 0 by construction. Pairs missing a day-`−14` observation are
+   dropped for that variable.
+4. **Legend at bottom, single row × 3 columns.**
+5. **Annotation:** "TC arrival" → "Tropical Cyclone Arrival".
+6. **Two intensity sub-folders.**
+   - `Outputs/binscatter/high_intensity/` — TCs with peak `level ∈
+     {3, 4, 5, 6}` (excluding `level == 9`, the extratropical / abnormal
+     code per CLAUDE.md).
+   - `Outputs/binscatter/low_intensity/`  — TCs with peak `level ∈
+     {0, 1, 2}`.
+   Per-TC peak level: `max(level)` over that TC's `has_typhoon == 1`
+   rows, excluding `level == 9`.
+
+### 12.2 Run diagnostics
+
+| Quantity                                  | Value   |
+|-------------------------------------------|---------|
+| Total TCs                                 | 63      |
+| TCs in high_intensity (peak level ≥ 3, excl 9) | 15 |
+| TCs in low_intensity  (peak level < 3)         | 45 |
+| TCs excluded (only level == 9 rows)            | 3  |
+| Stacked rows (per-city alignment)              | 613,872 |
+| Stacked rows in high_intensity                 | 146,160 |
+| Stacked rows in low_intensity                  | 438,480 |
+
+Pairs missing day-`−14` baseline (dropped from that variable's figure):
+
+| Variable          | Missing pairs |
+|-------------------|---------------|
+| value_all         | 0   |
+| count_all         | 0   |
+| value_health      | 387 |
+| count_health      | 387 |
+| value_hospital    | 836 |
+| count_hospital    | 836 |
+| value_pharmacy    | 760 |
+| count_pharmacy    | 760 |
+| value_restaurant  | 131 |
+| count_restaurant  | 131 |
+| value_supermarket | 177 |
+| count_supermarket | 176 |
+
+These are pairs whose city had no recorded transactions in that
+specific category on day −14 (sparser categories like hospital and
+pharmacy lose the most). For category `all`, the baseline is always
+present.
+
+### 12.3 Visual sanity checks
+
+- **High intensity, supermarket value.** Landfall (navy) shows a clear
+  ~CNY 3M dip below baseline at day 0, with rebound by day +5.
+  Subsequent cities also dip negative; Not-hit hovers near 0
+  throughout — exactly as expected when subtracting the pair's own
+  day-`−14` baseline.
+- **Low intensity, pharmacy count.** Landfall drops ~1K transactions
+  below baseline at day 0; Subsequent shows a positive blip at day 0
+  (city was experiencing the storm tail). Not-hit baseline flat near 0.
+- All Not-hit series in all 24 figures are essentially flat near 0 —
+  confirms the baseline-subtraction works and the control group is
+  unaffected by the focal TC.
+
+### 12.4 File list (v1, 24 PDFs)
+
+`Outputs/binscatter/high_intensity/`:
+
+```
+binscatter_value_all.pdf         binscatter_count_all.pdf
+binscatter_value_health.pdf      binscatter_count_health.pdf
+binscatter_value_hospital.pdf    binscatter_count_hospital.pdf
+binscatter_value_pharmacy.pdf    binscatter_count_pharmacy.pdf
+binscatter_value_restaurant.pdf  binscatter_count_restaurant.pdf
+binscatter_value_supermarket.pdf binscatter_count_supermarket.pdf
+```
+
+`Outputs/binscatter/low_intensity/`: same 12 filenames.
+
+### 12.5 Reproduction
+
+Same as before:
+
+```bash
+cd "/Users/ruihuaguo/Desktop/Research/Climate consumption"
+Rscript Coding/04_Binscatter.R
+```
+
+The script auto-deletes any obsolete flat-folder v0 PDFs in
+`Outputs/binscatter/` before writing the new sub-folder structure.
+
+### 12.6 Caveats specific to v1
+
+- **Within-pair baseline sensitivity.** Day `−14` is a single-day
+  baseline; if that day was anomalous (a holiday, a data outage), it
+  shifts the entire deviation series for that pair. We accept this
+  per the task spec ("y in day −14 should be 0"); a less noisy
+  alternative would average days `−14 … −10`.
+- **Peak-level classification is TC-wide.** A TC that was Cat-3 at first
+  landfall and Cat-2 by the time it reached subsequent cities is still
+  classified `high_intensity`. If a per-(TC, city) own-day classification
+  is wanted, it is a small refactor.
+- **Asymmetric anchor for Not-hit.** Not-hit series use the TC's first-
+  landfall date as their day 0, while Subsequent series use their own
+  city's hit date. This means Not-hit and Subsequent series are not on
+  identical calendar windows. Within each TC, the comparison is still
+  internally consistent.
+
+---
+
+## 13. Edition v2 update — 2026-04-27
+
+Six modifications applied; the v1 `high_intensity/`+`low_intensity/`
+flat layout was wiped and replaced by a three-bucket × value/count
+sub-tree. The v0 all-together view is restored as `General/`.
+
+### 13.1 Methodology changes (v2 deltas vs v1)
+
+1. **Restore "all-together" view as `General/`.** v1 had only
+   high/low intensity; v2 adds a no-filter bucket alongside.
+2. **Three two-line sub-figures per (bucket, prefix, category):**
+   - `01_Overall_…`    — All-hit (Landfall ∪ Subsequent) vs Not-hit.
+   - `02_Landfall_…`   — Landfall                         vs Not-hit.
+   - `03_Subsequent_…` — Subsequent                       vs Not-hit.
+
+   Series colors:
+   - All-hit  → dark purple `#5b3a87` (new in v2)
+   - Landfall → navy `#2c3e6b`
+   - Subsequent → coral `#c0392b`
+   - Not-hit → teal `#1f9d8a`
+
+3. **Y = 0 centered** in every figure via symmetric
+   `coord_cartesian(ylim = c(-y_max, y_max))` (with 10% pad).
+4. **Window restricted to `[−9, +9]`** (was `[−14, +14]`).
+5. **Baseline shifted from day `−14` → day `−4`.** Day `−4` is now
+   exactly 0 by within-pair construction.
+6. **Folder tree** (108 PDFs):
+
+   ```
+   Outputs/binscatter/
+   ├── General/
+   │   ├── value/   (18)
+   │   └── count/   (18)
+   ├── high_intensity/
+   │   ├── value/   (18)
+   │   └── count/   (18)
+   └── low_intensity/
+       ├── value/   (18)
+       └── count/   (18)
+   ```
+
+### 13.2 Run diagnostics
+
+| Quantity                                       | Value     |
+|------------------------------------------------|-----------|
+| Total TCs                                      | 63        |
+| TCs in high_intensity (peak level ≥ 3, excl 9) | 15        |
+| TCs in low_intensity  (peak level < 3)         | 45        |
+| TCs excluded (only level == 9 rows)            | 3         |
+| Stacked rows (per-city alignment, ±9 window)   | 402,192   |
+| Stacked rows in General                        | 402,192   |
+| Stacked rows in high_intensity                 | 95,760    |
+| Stacked rows in low_intensity                  | 287,280   |
+| PDFs written                                   | 108       |
+
+Pairs missing day-`−4` baseline (dropped from that variable's figure):
+
+| Variable          | Missing pairs |
+|-------------------|---------------|
+| value_all         | 0   |
+| count_all         | 0   |
+| value_health      | 397 |
+| count_health      | 397 |
+| value_hospital    | 818 |
+| count_hospital    | 818 |
+| value_pharmacy    | 740 |
+| count_pharmacy    | 739 |
+| value_restaurant  | 131 |
+| count_restaurant  | 131 |
+| value_supermarket | 155 |
+| count_supermarket | 154 |
+
+These are pairs with no recorded transactions in the focal category on
+day `−4`. `*_all` is fully populated.
+
+### 13.3 Visual sanity checks
+
+- **General/count/01_Overall — Pharmacy.** Hit (purple) shows a sharp
+  ~−700 transactions dip at day 0; Not-hit hovers near 0 across the
+  window. Both lines pass through 0 at day −4 by construction.
+- **high_intensity/value/02_Landfall — Supermarket.** Y-axis centered
+  symmetrically at ~`±6M`. Landfall dips ~CNY 4M at day 0 then recovers
+  by day +5; Not-hit is flat near 0.
+- **low_intensity/count/03_Subsequent — Pharmacy.** Subsequent dips
+  modestly at day −1 then jumps to ~+450 at day 0 (consistent with
+  later-day storm-tail timing in subsequent cities); Not-hit flat.
+- All Not-hit series in all 108 figures sit close to 0 throughout the
+  ±9-day window — confirms that the day-`−4` baseline subtraction is
+  removing pre-period level differences as intended.
+
+### 13.4 Filename convention
+
+```
+<NN>_<Group>_binscatter_<prefix>_<category>.pdf
+
+  NN       ∈ {01, 02, 03}
+  Group    ∈ {Overall, Landfall, Subsequent}
+  prefix   ∈ {value, count}
+  category ∈ {all, health, hospital, pharmacy, restaurant, supermarket}
+```
+
+Numeric prefix enforces deterministic Overall→Landfall→Subsequent sort.
+
+### 13.5 Reproduction
+
+```bash
+cd "/Users/ruihuaguo/Desktop/Research/Climate consumption"
+Rscript Coding/04_Binscatter.R
+```
+
+The script auto-deletes any pre-v2 PDFs (and empty leftover dirs) under
+`Outputs/binscatter/` before writing the new tree, so reruns are
+idempotent.
+
+### 13.6 Caveats specific to v2
+
+- **Day-`−4` is closer to the event.** A baseline at `−4` is more
+  responsive to anticipatory effects (preparedness shopping) than
+  `−14`. This is per the task spec; it tightens the figure but means
+  the displayed "Δ vs day −4" is not a "pre-event clean baseline" in
+  the strict event-study sense.
+- **All-hit pooling weights.** The Overall series pools Landfall and
+  Subsequent observations equally (one row per pair-day). Subsequent
+  cities outnumber Landfall by ~6:1 (376 vs 63 pairs in this dataset),
+  so the All-hit line tracks Subsequent more closely than Landfall.
+  No reweighting is applied — the descriptive figure shows the raw
+  pooled mean.
+- **Symmetric y-limits computed from each figure's own data.**
+  Different sub-figures within the same category use different y-axis
+  scales; this maximises the visible signal but trades off direct
+  side-by-side comparability. If a shared y-scale is wanted, it is a
+  small refactor.
