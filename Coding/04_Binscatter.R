@@ -1,6 +1,6 @@
 ## -----------------------------------------------------------------------------
 ##   Climate and Consumption
-##   04_Binscatter.R   (Edition v3 — 2026-04-27)
+##   04_Binscatter.R   (Edition v4 — 2026-04-28)
 ##
 ##   Descriptive binscatters of daily city consumption around tropical cyclones.
 ##   Three buckets × six categories × two prefixes × three sub-figures = 108 PDFs.
@@ -21,10 +21,10 @@
 ##     Not-hit    → TC's first-landfall date (only defensible anchor).
 ##     All-hit    → as for its underlying Landfall/Subsequent rows.
 ##
-##   x-axis : event_time ∈ [-9, +9].
-##   y-axis : within-pair % change from day -4 baseline (v3):
-##              y_pct[k] = (y[k] − y[−4]) / y[−4] × 100, then averaged
-##              within (group, event_time). Pairs with y[−4] == 0 or NA
+##   x-axis : event_time ∈ [-7, +7].   (v4)
+##   y-axis : within-pair % change from day -7 baseline (v4):
+##              y_pct[k] = (y[k] − y[−7]) / y[−7] × 100, then averaged
+##              within (group, event_time). Pairs with y[−7] == 0 or NA
 ##              are dropped for that variable (percentage undefined).
 ##              Y-axis centred symmetrically so y = 0% sits in the middle.
 ##
@@ -59,9 +59,10 @@ categories <- c("all", "health", "hospital", "pharmacy",
 prefixes   <- c("value", "count")
 
 # --- Event window & baseline -------------------------------------------------
-event_pre    <- 9L
-event_post   <- 9L
-baseline_day <- -4L
+# v4: window narrowed to [-7, +7] and baseline shifted to day -7.
+event_pre    <- 7L
+event_post   <- 7L
+baseline_day <- -7L
 
 # --- Visual identity ---------------------------------------------------------
 COL_HIT        <- "#5b3a87"   # dark purple — All-hit (Overall figure)
@@ -209,9 +210,9 @@ baselines <- stacked %>%
 
 stacked <- stacked %>% left_join(baselines, by = "pair_id")
 
-# v3: y_dev is now a percentage change vs day -4.
-#   y_dev[k] = (y[k] − y[−4]) / y[−4] × 100
-# Pairs with y[−4] == 0 or NA produce NA y_dev (dropped from the figure).
+# v4: y_dev is a percentage change vs the new baseline (day -7).
+#   y_dev[k] = (y[k] − y[baseline_day]) / y[baseline_day] × 100
+# Pairs with y[baseline_day] == 0 or NA produce NA y_dev (dropped from figure).
 for (vv in y_cols) {
   base_col <- paste0(vv, "__base")
   base     <- stacked[[base_col]]
@@ -228,7 +229,7 @@ miss_zero <- sapply(y_cols, function(vv) {
   sum(!is.na(bb) & bb == 0)
 })
 cat(sprintf(
-  "  Pairs dropped because day-%d baseline is NA or zero (v3 %% transform):\n",
+  "  Pairs dropped because day-%d baseline is NA or zero (v4 %% transform):\n",
   baseline_day))
 print(data.frame(variable      = y_cols,
                  missing_NA    = miss_na,
@@ -262,7 +263,7 @@ bin_summary <- function(df, varname, series_map) {
 }
 
 pretty_prefix <- function(p) if (p == "value") "Value" else "Count"
-# v3: y is a percentage; format axis with a "%" suffix (already in percent units).
+# v4: y is a percentage; format axis with a "%" suffix (already in percent units).
 y_label_fmt   <- label_number(suffix = "%", accuracy = 0.1)
 
 # Series-map presets for each sub-figure
