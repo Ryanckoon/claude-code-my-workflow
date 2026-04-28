@@ -1,6 +1,6 @@
 ## -----------------------------------------------------------------------------
 ##   Climate and Consumption
-##   04_Binscatter.R   (Edition v3 — 2026-04-27)
+##   04_Binscatter.R   (Edition v5 — 2026-04-28)
 ##
 ##   Descriptive binscatters of daily city consumption around tropical cyclones.
 ##   Three buckets × six categories × two prefixes × three sub-figures = 108 PDFs.
@@ -21,12 +21,16 @@
 ##     Not-hit    → TC's first-landfall date (only defensible anchor).
 ##     All-hit    → as for its underlying Landfall/Subsequent rows.
 ##
-##   x-axis : event_time ∈ [-9, +9].
-##   y-axis : within-pair % change from day -4 baseline (v3):
-##              y_pct[k] = (y[k] − y[−4]) / y[−4] × 100, then averaged
-##              within (group, event_time). Pairs with y[−4] == 0 or NA
-##              are dropped for that variable (percentage undefined).
-##              Y-axis centred symmetrically so y = 0% sits in the middle.
+##   x-axis : event_time ∈ [-7, +7].
+##   y-axis : within-pair LOG-DIFFERENCE × 100 from day -7 baseline (v5):
+##              y_log[k] = (log y[k] − log y[−7]) × 100, then averaged
+##              within (group, event_time). Rows where y[k] ≤ 0 or
+##              y[−7] ≤ 0 (or either is NA) are dropped (log undefined).
+##              For small moves this approximates a % change but is
+##              symmetric in upside vs downside and immune to the
+##              mean-of-ratios (Jensen) bias that inflated v4's control
+##              series. Y-axis centred symmetrically so y = 0 sits in
+##              the middle and labelled with a "%" suffix.
 ##
 ##   ±1 SE shown as thin dashed lines (no fill).
 ##   Legend at bottom in a single row.
@@ -59,9 +63,10 @@ categories <- c("all", "health", "hospital", "pharmacy",
 prefixes   <- c("value", "count")
 
 # --- Event window & baseline -------------------------------------------------
-event_pre    <- 9L
-event_post   <- 9L
-baseline_day <- -4L
+# v4: window narrowed to [-7, +7] and baseline shifted to day -7.
+event_pre    <- 7L
+event_post   <- 7L
+baseline_day <- -7L
 
 # --- Visual identity ---------------------------------------------------------
 COL_HIT        <- "#5b3a87"   # dark purple — All-hit (Overall figure)
@@ -199,7 +204,7 @@ cat(sprintf("  Stacked rows: %s | groups: %s\n",
 # 4. Within-pair deviation from baseline_day
 # =============================================================================
 
-cat(sprintf("Computing within-pair %% deviation from day %d baseline...\n",
+cat(sprintf("Computing within-pair log-difference (×100) from day %d baseline...\n",
             baseline_day))
 
 baselines <- stacked %>%
@@ -209,32 +214,35 @@ baselines <- stacked %>%
 
 stacked <- stacked %>% left_join(baselines, by = "pair_id")
 
-# v3: y_dev is now a percentage change vs day -4.
-#   y_dev[k] = (y[k] − y[−4]) / y[−4] × 100
-# Pairs with y[−4] == 0 or NA produce NA y_dev (dropped from the figure).
+# v5: y_dev is a log-difference (×100) vs the day-`baseline_day` value.
+#   y_dev[k] = (log y[k] − log y[baseline_day]) × 100
+# Rows where y[k] ≤ 0 or y[baseline_day] ≤ 0 (or either is NA) produce NA
+# y_dev — dropped from the figure. log() is intentional, never log1p().
 for (vv in y_cols) {
   base_col <- paste0(vv, "__base")
   base     <- stacked[[base_col]]
   raw      <- stacked[[vv]]
-  pct      <- if_else(!is.na(base) & base != 0,
-                      (raw - base) / base * 100,
+  ld       <- if_else(!is.na(base) & base > 0 & !is.na(raw) & raw > 0,
+                      (log(raw) - log(base)) * 100,
                       NA_real_)
-  stacked[[paste0(vv, "__dev")]] <- pct
+  stacked[[paste0(vv, "__dev")]] <- ld
 }
 
-miss_na  <- sapply(y_cols, function(vv) sum(is.na(baselines[[paste0(vv, "__base")]])))
-miss_zero <- sapply(y_cols, function(vv) {
+# Pair-level diagnostics: how many pairs have a non-positive day-`baseline_day`
+# baseline (and so contribute zero rows to any event_time for this variable)?
+miss_na   <- sapply(y_cols, function(vv) sum(is.na(baselines[[paste0(vv, "__base")]])))
+miss_npos <- sapply(y_cols, function(vv) {
   bb <- baselines[[paste0(vv, "__base")]]
-  sum(!is.na(bb) & bb == 0)
+  sum(!is.na(bb) & bb <= 0)
 })
 cat(sprintf(
-  "  Pairs dropped because day-%d baseline is NA or zero (v3 %% transform):\n",
+  "  Pairs dropped because day-%d baseline is NA or non-positive (v5 log-diff):\n",
   baseline_day))
-print(data.frame(variable      = y_cols,
-                 missing_NA    = miss_na,
-                 zero_baseline = miss_zero,
-                 dropped_total = miss_na + miss_zero,
-                 row.names     = NULL))
+print(data.frame(variable          = y_cols,
+                 missing_NA        = miss_na,
+                 nonpos_baseline   = miss_npos,
+                 dropped_total     = miss_na + miss_npos,
+                 row.names         = NULL))
 
 # =============================================================================
 # 5. Bin-mean collapse + plotting
@@ -262,7 +270,9 @@ bin_summary <- function(df, varname, series_map) {
 }
 
 pretty_prefix <- function(p) if (p == "value") "Value" else "Count"
-# v3: y is a percentage; format axis with a "%" suffix (already in percent units).
+# v5: y is log-difference × 100, which approximates % change for small moves.
+# Keep the "%" suffix on the axis so the figure reads naturally for non-technical
+# audiences; subtitle clarifies the underlying transform.
 y_label_fmt   <- label_number(suffix = "%", accuracy = 0.1)
 
 # Series-map presets for each sub-figure
@@ -296,7 +306,7 @@ plot_one <- function(df, varname, prefix, category,
   title <- sprintf("Binscatter: %s (%s) — %s — %s",
                    pretty_cat, prefix, focal_labels[[focal]], bucket_label)
   subtitle <- sprintf(
-    "Within-pair %% deviation from day %d | bin = 1 day | Mean (solid) ±1 SE (dashed)",
+    "Within-pair log-difference × 100 vs day %d | bin = 1 day | Mean (solid) ±1 SE (dashed)",
     baseline_day)
 
   # Symmetric y-limits so y = 0 sits in the centre.
@@ -333,7 +343,7 @@ plot_one <- function(df, varname, prefix, category,
     labs(title    = title,
          subtitle = subtitle,
          x        = "Days Relative to Tropical Cyclone Landfall",
-         y        = sprintf("%s — %% Δ vs day %d",
+         y        = sprintf("%s — log-diff vs day %d (×100, ≈%%)",
                             pretty_prefix(prefix), baseline_day))  +
     base_theme
 

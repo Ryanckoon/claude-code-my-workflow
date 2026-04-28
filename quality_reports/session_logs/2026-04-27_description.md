@@ -512,3 +512,124 @@ single bucket, and across buckets within a single category.
   low day-`−4` value will see all subsequent percentages inflated.
   The single-day baseline is per task spec; a less noisy alternative
   would be to use the average over days `−9 … −5`.
+
+
+---
+**Context compaction (manual) at 23:31**
+Check git log and quality_reports/plans/ for current state.
+
+---
+
+## 15. Edition v4 (2026-04-28) — narrower window, day −7 baseline
+
+### 15.1 What changed
+- `event_pre = event_post = 7L` (was `9L`).
+- `baseline_day = -7L` (was `-4L`).
+- Header docstring, in-code comments, and the printed banner refreshed
+  from "v3" to "v4".
+
+The percentage transform is unchanged in form:
+
+```
+y_pct[k] = (y[k] − y[−7]) / y[−7] × 100
+```
+
+### 15.2 Why
+With baseline at day `−7` and the window now `[−7, +7]`, every series
+mechanically passes through `0%` at its left edge. This makes each
+figure read as "cumulative percentage move since the start of the
+visible pre-event window" — easier to communicate to a non-technical
+audience and aligned with how the poster narrates the event. The
+narrower window also drops the noisier outer days where pair counts
+thin out.
+
+### 15.3 Run diagnostics
+- Branch: `feat/binscatter-v4` (off `main` at `cae5e1b`).
+- Stacked rows: 317,520 (was 396,900 under the wider v3 window).
+- TCs: 63 total | high: 15 | low: 45 | 3 excluded (level == 9 only).
+- Pairs dropped because day-`−7` baseline is `NA` or zero:
+  - `value_all` / `count_all`: 0 / 0
+  - `value_health` / `count_health`: 388 / 387
+  - `value_hospital` / `count_hospital`: 807 / 807
+  - `value_pharmacy` / `count_pharmacy`: 740 / 740
+  - `value_restaurant` / `count_restaurant`: 140 / 140
+  - `value_supermarket` / `count_supermarket`: 167 / 167
+- Pre-existing 108 v3 PDFs wiped, 108 v4 PDFs written, 108 confirmed
+  on disk under `Outputs/binscatter/{General,high_intensity,low_intensity}/{value,count}/`.
+
+### 15.4 Caveats specific to v4
+- **Edge baseline.** Anchoring at day `−7` (the left edge of the
+  window) means there is no visible pre-trend test in the figures —
+  every series is mechanically zero at `−7`. This is descriptive,
+  not a violation of parallel-trends per se, but it loses the
+  visual "pre-trend flat → jump at 0" narrative that the day-`−4`
+  anchor allowed.
+- **Narrower late-window.** Previously the figures showed days `+5`
+  through `+9` (recovery tail). v4 stops at `+7`, so persistent
+  effects beyond a week are no longer plotted.
+- **Same small-baseline fragility as v3.** Pairs with very small but
+  non-zero day-`−7` values can still inflate per-pair percentages;
+  within-pair averaging mitigates but does not eliminate this.
+
+---
+
+## 16. Edition v5 (2026-04-28) — log-difference replaces percentage
+
+### 16.1 Trigger
+After v4, the Not-hit (control) series sat systematically above 0 %
+across the entire window — implausible for a clean control. Diagnosis:
+**mean-of-ratios bias (Jensen's inequality).** Per-pair `pct = (y[k] −
+y[−7]) / y[−7] × 100` averaged across pairs is upward-biased whenever
+the denominator `y[−7]` varies, because a small denominator can
+produce `+500 %` while the worst downside is bounded at `−100 %`. The
+asymmetry inflates the cross-pair mean even when the underlying series
+is flat.
+
+### 16.2 What changed
+Replace the percentage transform with a **log-difference × 100**:
+
+```
+y_log[k] = (log y[k] − log y[−7]) × 100
+```
+
+Symmetric in upside vs downside (because `log` is concave) and immune
+to Jensen inflation. For small moves (`|Δ| ≲ 30 %`) it is numerically
+indistinguishable from a raw percentage, so the figure reads naturally
+for non-technical audiences. Axis suffix kept as `%`; subtitle and
+y-axis caption now read "log-diff × 100 (≈%)".
+
+Validity guard tightened: rows where `y[k] ≤ 0` or `y[−7] ≤ 0` (or
+either is `NA`) are dropped. Per CLAUDE.md, `log()` is intentional
+— never `log1p()`.
+
+Window `[−7, +7]` and baseline day `−7` are unchanged.
+
+### 16.3 Run diagnostics
+- Branch: `feat/binscatter-v5` (off `feat/binscatter-v4` → `cae5e1b` on `main`).
+- Stacked rows: 317,520 (unchanged from v4 — same window + cohorting).
+- TCs: 63 total | high: 15 | low: 45 | 3 excluded (level == 9 only).
+- Pairs dropped because day-`−7` baseline is `NA` or `≤ 0`:
+  - `value_all` / `count_all`: 0 / 0
+  - `value_health` / `count_health`: 388 / 387
+  - `value_hospital` / `count_hospital`: 807 / 807
+  - `value_pharmacy` / `count_pharmacy`: 740 / 740
+  - `value_restaurant` / `count_restaurant`: 140 / 140
+  - `value_supermarket` / `count_supermarket`: 167 / 167
+- Drop counts are essentially identical to v4 because non-positive
+  baselines are dominated by missingness, not by `y[−7] == 0`.
+  Additional drops at individual `(k ≠ −7)` rows where `y[k] ≤ 0`
+  are not counted in the per-pair summary (handled silently in the
+  `if_else`).
+- Pre-existing 108 v4 PDFs wiped, 108 v5 PDFs written, 108 confirmed
+  on disk under `Outputs/binscatter/{General,high_intensity,low_intensity}/{value,count}/`.
+
+### 16.4 What v5 does NOT fix
+- **Edge baseline.** Anchoring at day `−7` still forces every series
+  through 0 at the left edge — no visible pre-trend test.
+- **Day-of-week cyclicality.** Log-diff is symmetric, but it does not
+  remove weekly seasonality. Any residual drift in the v5 Not-hit
+  series — if visible — should now be interpreted as real day-of-week
+  patterns rather than Jensen artifact.
+- **Single-day baseline.** Anchoring on one day is still sensitive to
+  pair-level noise at `−7`. A future v6 could combine log-diff with a
+  multi-day baseline window (e.g., mean of `−7…−4`) to reduce variance.
